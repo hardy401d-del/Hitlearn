@@ -17,10 +17,25 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
   const [isAssessing, setIsAssessing] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isVocalGuideEnabled, setIsVocalGuideEnabled] = useState(false); // Default to false when original audio is available to avoid overlapping voices!
+
+  // Real Audio player states
+  const [showOriginalPlayer, setShowOriginalPlayer] = useState(true);
+  const [playerType, setPlayerType] = useState<"youtube" | "local">("youtube");
+  const [localAudioUrl, setLocalAudioUrl] = useState<string | null>(null);
 
   // References for scrolling
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef<HTMLDivElement | null>(null);
+
+  const handleLocalAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setLocalAudioUrl(url);
+      setPlayerType("local");
+    }
+  };
 
   // Flatten the lines to easily sync them by index
   const flatLines = song.lyricsSections.flatMap((section) => 
@@ -28,6 +43,34 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
   );
 
   const totalLines = flatLines.length;
+
+  // Speech synthesis helper
+  const speakLine = (text: string) => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.rate = 0.95; // Clear natural rate for learning
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Voice synthesis for current active line when Vocal Guide is enabled
+  useEffect(() => {
+    if (isPlaying && isVocalGuideEnabled && window.speechSynthesis) {
+      const currentLine = flatLines[currentLineIndex];
+      if (currentLine) {
+        speakLine(currentLine.english);
+      }
+    }
+  }, [currentLineIndex, isPlaying, isVocalGuideEnabled]);
+
+  // Cancel synthesis if playback pauses
+  useEffect(() => {
+    if (!isPlaying && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, [isPlaying]);
 
   // Sync Timer for simulated playback
   useEffect(() => {
@@ -158,6 +201,111 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
             </div>
           </div>
 
+          {/* Lecteur Original Voice (YouTube / Local MP3) */}
+          <div className="bg-slate-900 border-b border-slate-800 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black tracking-widest text-red-500 uppercase flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span>VOIX RÉELLE DU CHANTEUR ORIGINAL</span>
+              </span>
+              <button
+                onClick={() => setShowOriginalPlayer(!showOriginalPlayer)}
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 rounded text-[10px] font-bold text-slate-300 cursor-pointer"
+              >
+                {showOriginalPlayer ? "Masquer le lecteur" : "Afficher le lecteur"}
+              </button>
+            </div>
+
+            {showOriginalPlayer && (
+              <div className="space-y-3">
+                {/* Mode Selector Tabs */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button
+                    onClick={() => setPlayerType("youtube")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      playerType === "youtube"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    📺 YouTube Officiel
+                  </button>
+                  <button
+                    onClick={() => setPlayerType("local")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      playerType === "local"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    📁 Fichier MP3 Local
+                  </button>
+                </div>
+
+                {/* YouTube Embed Player */}
+                {playerType === "youtube" && (
+                  <div className="space-y-2">
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      L'intégration YouTube ci-dessous recherche automatiquement <strong>{song.artist} - {song.title}</strong> pour vous faire profiter de la version officielle avec la vraie voix !
+                    </p>
+                    <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-inner">
+                      <iframe
+                        src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(song.artist + " " + song.title)}&autoplay=0`}
+                        title={`Lecteur Hitlearn - ${song.title}`}
+                        className="absolute inset-0 w-full h-full border-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Local MP3 File Player */}
+                {playerType === "local" && (
+                  <div className="space-y-2">
+                    {!localAudioUrl ? (
+                      <div className="border border-dashed border-slate-800 hover:border-red-500/40 bg-slate-950 rounded-xl p-4 text-center transition-colors relative cursor-pointer group">
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleLocalAudioUpload}
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                        />
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-slate-300 group-hover:text-red-400 transition-colors">
+                            Glissez-déposez ou cliquez pour importer votre MP3
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            (Votre fichier reste local sur votre appareil, respectant les droits d'auteur)
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-300 flex items-center gap-1.5 truncate">
+                            🎵 Fichier chargé avec succès !
+                          </span>
+                          <button
+                            onClick={() => setLocalAudioUrl(null)}
+                            className="text-red-400 hover:text-red-300 font-bold text-[10px] uppercase cursor-pointer"
+                          >
+                            Retirer
+                          </button>
+                        </div>
+                        <audio
+                          src={localAudioUrl}
+                          controls
+                          className="w-full h-8 accent-red-600 rounded"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Scrolling lyrics section */}
           <div
             ref={lyricsContainerRef}
@@ -171,17 +319,27 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
                 <div
                   key={idx}
                   ref={isActive ? activeLineRef : null}
-                  className={`py-3 px-4 rounded-xl transition-all duration-300 flex flex-col space-y-1 ${
+                  onClick={() => {
+                    setCurrentLineIndex(idx);
+                    speakLine(line.english);
+                  }}
+                  className={`py-3 px-4 rounded-xl transition-all duration-300 flex flex-col space-y-1 cursor-pointer group/line ${
                     isActive
                       ? "bg-red-950/40 border border-red-900/60 shadow-lg scale-[1.02]"
                       : isPast
                       ? "opacity-30"
                       : "opacity-60 hover:opacity-80"
                   }`}
+                  title="Cliquer pour écouter la prononciation vocale"
                 >
-                  <span className="text-[10px] font-black tracking-widest text-red-500/80 uppercase">
-                    {line.sectionType}
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black tracking-widest text-red-500/80 uppercase">
+                      {line.sectionType}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold opacity-0 group-hover/line:opacity-100 transition-opacity flex items-center gap-1">
+                      <span>🔊 Écouter</span>
+                    </span>
+                  </div>
                   <div className={`font-sans font-extrabold text-base md:text-lg transition-colors ${
                     isActive ? "text-white" : "text-slate-300"
                   }`}>
@@ -212,7 +370,7 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
           </div>
 
           {/* Player controls */}
-          <div className="p-6 bg-slate-900 border-t border-slate-800/80 flex items-center justify-between gap-4">
+          <div className="p-6 bg-slate-900 border-t border-slate-800/80 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
             <div className="flex items-center gap-3">
               <button
                 onClick={handlePlayPause}
@@ -235,6 +393,31 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
                   <RefreshCw className="w-4 h-4" />
                 </button>
               )}
+
+              {/* Vocal Guide toggle */}
+              <button
+                onClick={() => {
+                  const newState = !isVocalGuideEnabled;
+                  setIsVocalGuideEnabled(newState);
+                  if (newState) {
+                    const currentLine = flatLines[currentLineIndex];
+                    if (currentLine) {
+                      speakLine(currentLine.english);
+                    }
+                  } else if (window.speechSynthesis) {
+                    window.speechSynthesis.cancel();
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider flex items-center gap-1.5 transition-all cursor-pointer uppercase ${
+                  isVocalGuideEnabled
+                    ? "bg-red-600/20 text-red-400 border border-red-500/30"
+                    : "bg-slate-800 text-slate-400 border border-slate-700/80"
+                }`}
+                title="Activer/Désactiver le guide vocal automatique des paroles"
+              >
+                <span>🎙️</span>
+                <span>{isVocalGuideEnabled ? "Guide Vocal ON" : "Guide Vocal OFF"}</span>
+              </button>
             </div>
 
             <span className="text-xs font-semibold text-slate-400">
