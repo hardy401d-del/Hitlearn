@@ -15,6 +15,7 @@ export default function App() {
   const [selectedSong, setSelectedSong] = useState<SongAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadedAudioUrl, setUploadedAudioUrl] = useState<string | null>(null);
   
   // Custom generated songs list backed up in local storage
   const [customSongs, setCustomSongs] = useState<SongAnalysis[]>(() => {
@@ -231,6 +232,8 @@ export default function App() {
                 setIsLoading={setIsLoading}
                 error={error}
                 setError={setError}
+                uploadedAudioUrl={uploadedAudioUrl}
+                setUploadedAudioUrl={setUploadedAudioUrl}
               />
             </motion.div>
           )}
@@ -264,6 +267,8 @@ export default function App() {
                 onBackToStudy={() => setCurrentView("study")}
                 onStartCourse={() => setCurrentView("course")}
                 onUpdateSong={handleUpdateSong}
+                uploadedAudioUrl={uploadedAudioUrl}
+                setUploadedAudioUrl={setUploadedAudioUrl}
               />
             </motion.div>
           )}

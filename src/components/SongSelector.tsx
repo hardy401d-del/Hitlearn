@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen, Trash2, CheckCircle2 } from "lucide-react";
+import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen, Trash2, CheckCircle2, Upload, FileAudio } from "lucide-react";
 import { SongAnalysis } from "../types";
 import { PRESET_SONGS } from "../presets";
 import { motion, AnimatePresence } from "motion/react";
@@ -12,6 +12,8 @@ interface SongSelectorProps {
   setIsLoading: (loading: boolean) => void;
   error: string | null;
   setError: (error: string | null) => void;
+  uploadedAudioUrl?: string | null;
+  setUploadedAudioUrl?: (url: string | null) => void;
 }
 
 const TIPS = [
@@ -29,7 +31,9 @@ export default function SongSelector({
   isLoading, 
   setIsLoading, 
   error, 
-  setError 
+  setError,
+  uploadedAudioUrl,
+  setUploadedAudioUrl
 }: SongSelectorProps) {
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
@@ -37,8 +41,14 @@ export default function SongSelector({
   const [showCustomLyricsInput, setShowCustomLyricsInput] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
 
+  // Audio transcription tab states
+  const [activeTab, setActiveTab] = useState<"online" | "audio" | "offline">("online");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioTitle, setAudioTitle] = useState("");
+  const [audioArtist, setAudioArtist] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+
   // Offline creation states
-  const [activeTab, setActiveTab] = useState<"online" | "offline">("online");
   const [offlineTitle, setOfflineTitle] = useState("");
   const [offlineArtist, setOfflineArtist] = useState("");
   const [offlineEnglishLyrics, setOfflineEnglishLyrics] = useState("");
@@ -173,6 +183,93 @@ export default function SongSelector({
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Une erreur de connexion au serveur s'est produite.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("audio/")) {
+      setAudioFile(file);
+      setError(null);
+    } else {
+      setError("Veuillez déposer un fichier audio valide (MP3, WAV, M4A, etc.).");
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAudioFile(file);
+      setError(null);
+    }
+  };
+
+  const handleAudioSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!audioFile) {
+      setError("Veuillez sélectionner un fichier audio.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setTipIndex(0);
+
+    try {
+      // 1. Convert to Base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(",")[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(audioFile);
+
+      const base64Data = await base64Promise;
+
+      // 2. Set up local Audio player URL in parent App component so LiveMode can play it
+      if (setUploadedAudioUrl) {
+        const url = URL.createObjectURL(audioFile);
+        setUploadedAudioUrl(url);
+      }
+
+      // 3. Request API
+      const response = await fetch("/api/transcribe-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio: base64Data,
+          mimeType: audioFile.type || "audio/mp3",
+          title: audioTitle.trim() || undefined,
+          artist: audioArtist.trim() || undefined
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur de transcription de l'audio.");
+      }
+
+      onSongSelected(data);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Impossible de transcrire et d'analyser le fichier audio.");
     } finally {
       setIsLoading(false);
     }
@@ -358,7 +455,7 @@ export default function SongSelector({
             <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xs space-y-6">
               
               {/* Tab Selector */}
-              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
+              <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
                 <button
                   type="button"
                   onClick={() => {
@@ -372,7 +469,22 @@ export default function SongSelector({
                   }`}
                 >
                   <Sparkles className="w-4 h-4 text-red-500" />
-                  <span>🚀 Assistant IA (En ligne)</span>
+                  <span>🚀 Assistant IA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("audio");
+                    setError(null);
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === "audio"
+                      ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <FileAudio className="w-4 h-4 text-amber-500" />
+                  <span>🎙️ Transcription MP3</span>
                 </button>
                 <button
                   type="button"
@@ -387,7 +499,7 @@ export default function SongSelector({
                   }`}
                 >
                   <FileText className="w-4 h-4 text-slate-600" />
-                  <span>🔌 Mode Hors-ligne (100% Local)</span>
+                  <span>🔌 Hors-ligne</span>
                 </button>
               </div>
 
@@ -472,6 +584,124 @@ export default function SongSelector({
                       >
                         <Sparkles className="w-4 h-4" />
                         <span>Générer mon cours d'anglais</span>
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : activeTab === "audio" ? (
+                <>
+                  <div className="border-b border-slate-100 pb-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <FileAudio className="w-5 h-5 text-amber-500" />
+                      <span>Transcrire et Analyser un fichier MP3</span>
+                    </h2>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Importez un morceau (MP3, WAV, M4A) depuis votre appareil. Gemini va écouter l'audio, transcrire les paroles en anglais, générer les traductions bilingues et concevoir vos quiz !
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleAudioSubmit} className="space-y-5">
+                    {/* Drag and Drop Zone */}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 relative cursor-pointer ${
+                        isDragging
+                          ? "border-amber-500 bg-amber-50/50 scale-[1.01]"
+                          : audioFile
+                          ? "border-emerald-500 bg-emerald-50/20"
+                          : "border-slate-300 hover:border-amber-400 bg-slate-50/50"
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className={`p-4 rounded-full ${
+                          audioFile ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                        }`}>
+                          {audioFile ? (
+                            <CheckCircle2 className="w-8 h-8" />
+                          ) : (
+                            <Upload className="w-8 h-8 animate-bounce" />
+                          )}
+                        </div>
+
+                        {audioFile ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-emerald-800">
+                              Fichier audio sélectionné !
+                            </p>
+                            <p className="text-xs font-mono text-slate-600 break-all max-w-md mx-auto">
+                              {audioFile.name} ({(audioFile.size / (1024 * 1024)).toFixed(2)} Mo)
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              Cliquez ou glissez un autre fichier pour le remplacer
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-slate-700">
+                              Sélectionner ou glisser votre musique ici
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              Formats acceptés : MP3, WAV, M4A, OGG, AAC... (Max 10 Mo)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Metadata fields to help Gemini */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                          <span>Titre de la Chanson</span>
+                          <span className="text-slate-400 font-normal">(Optionnel, aide l'IA)</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Shape of You, Shallow, Hello..."
+                          value={audioTitle}
+                          onChange={(e) => setAudioTitle(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-amber-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                          <span>Artiste / Groupe</span>
+                          <span className="text-slate-400 font-normal">(Optionnel, aide l'IA)</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Ed Sheeran, Lady Gaga, Adele..."
+                          value={audioArtist}
+                          onChange={(e) => setAudioArtist(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-amber-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <div className="text-xs text-slate-400 italic">
+                        🔒 Vos fichiers audio sont traités de manière sécurisée et confidentielle par Gemini.
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!audioFile}
+                        className={`px-6 py-3.5 font-bold text-sm rounded-xl flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer ${
+                          audioFile
+                            ? "bg-amber-500 hover:bg-amber-600 text-white"
+                            : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <Sparkles className="w-4 h-4 animate-pulse" />
+                        <span>Transcrire et Créer le Cours</span>
                       </button>
                     </div>
                   </form>

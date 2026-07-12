@@ -12,9 +12,18 @@ interface LiveModeProps {
   onBackToStudy: () => void;
   onStartCourse: () => void;
   onUpdateSong?: (updatedSong: SongAnalysis) => void;
+  uploadedAudioUrl?: string | null;
+  setUploadedAudioUrl?: (url: string | null) => void;
 }
 
-export default function LiveMode({ song, onBackToStudy, onStartCourse, onUpdateSong }: LiveModeProps) {
+export default function LiveMode({ 
+  song, 
+  onBackToStudy, 
+  onStartCourse, 
+  onUpdateSong,
+  uploadedAudioUrl,
+  setUploadedAudioUrl
+}: LiveModeProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [userUnderstanding, setUserUnderstanding] = useState("");
@@ -26,8 +35,10 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse, onUpdateS
 
   // Real Audio player states
   const [showOriginalPlayer, setShowOriginalPlayer] = useState(true);
-  const [playerType, setPlayerType] = useState<"youtube" | "phone" | "local">("youtube");
-  const [localAudioUrl, setLocalAudioUrl] = useState<string | null>(null);
+  const [playerType, setPlayerType] = useState<"youtube" | "phone" | "local">(
+    uploadedAudioUrl ? "local" : "youtube"
+  );
+  const [localAudioUrl, setLocalAudioUrl] = useState<string | null>(uploadedAudioUrl || null);
   
   // Ref for the local audio element to sync play/pause states
   const localAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -105,6 +116,9 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse, onUpdateS
       const url = URL.createObjectURL(file);
       setLocalAudioUrl(url);
       setPlayerType("local");
+      if (setUploadedAudioUrl) {
+        setUploadedAudioUrl(url);
+      }
     }
   };
 
@@ -497,7 +511,12 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse, onUpdateS
                             🎵 Fichier chargé avec succès !
                           </span>
                           <button
-                            onClick={() => setLocalAudioUrl(null)}
+                            onClick={() => {
+                              setLocalAudioUrl(null);
+                              if (setUploadedAudioUrl) {
+                                setUploadedAudioUrl(null);
+                              }
+                            }}
                             className="text-red-400 hover:text-red-300 font-bold text-[10px] uppercase cursor-pointer"
                           >
                             Retirer
