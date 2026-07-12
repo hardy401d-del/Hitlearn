@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, FastForward, MessageSquare, Loader2, Star, Sparkles, Send, CheckCircle2, UserCheck, RefreshCw } from "lucide-react";
+import { 
+  Play, Pause, FastForward, MessageSquare, Loader2, Star, Sparkles, 
+  Send, CheckCircle2, UserCheck, RefreshCw, Volume2, Youtube, 
+  Smartphone, FileAudio, Search 
+} from "lucide-react";
 import { SongAnalysis, AssessmentResult, LiveComment } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -7,9 +11,10 @@ interface LiveModeProps {
   song: SongAnalysis;
   onBackToStudy: () => void;
   onStartCourse: () => void;
+  onUpdateSong?: (updatedSong: SongAnalysis) => void;
 }
 
-export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveModeProps) {
+export default function LiveMode({ song, onBackToStudy, onStartCourse, onUpdateSong }: LiveModeProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [userUnderstanding, setUserUnderstanding] = useState("");
@@ -21,8 +26,74 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
 
   // Real Audio player states
   const [showOriginalPlayer, setShowOriginalPlayer] = useState(true);
-  const [playerType, setPlayerType] = useState<"youtube" | "local">("youtube");
+  const [playerType, setPlayerType] = useState<"youtube" | "phone" | "local">("youtube");
   const [localAudioUrl, setLocalAudioUrl] = useState<string | null>(null);
+  
+  // Ref for the local audio element to sync play/pause states
+  const localAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Translation editing state
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+
+  // Custom YouTube association state
+  const [youtubeInput, setYoutubeInput] = useState("");
+  const [currentYoutubeId, setCurrentYoutubeId] = useState<string | null>(song.youtubeId || null);
+
+  // Synchronize when the song changes
+  useEffect(() => {
+    setCurrentYoutubeId(song.youtubeId || null);
+    setYoutubeInput(song.youtubeId ? `https://www.youtube.com/watch?v=${song.youtubeId}` : "");
+  }, [song]);
+
+  // Sync HTML5 Audio player with app's isPlaying state
+  useEffect(() => {
+    if (playerType === "local" && localAudioRef.current) {
+      if (isPlaying) {
+        localAudioRef.current.play().catch((e) => console.log("Audio play deferred:", e));
+      } else {
+        localAudioRef.current.pause();
+      }
+    }
+  }, [isPlaying, playerType]);
+
+  const handleUpdateTranslation = (globalIndex: number, newFrenchText: string) => {
+    let currentIndex = 0;
+    const updatedSections = song.lyricsSections.map((section) => {
+      const updatedLines = section.lines.map((line) => {
+        if (currentIndex === globalIndex) {
+          currentIndex++;
+          return { ...line, french: newFrenchText };
+        }
+        currentIndex++;
+        return line;
+      });
+      return { ...section, lines: updatedLines };
+    });
+
+    const updatedSong = { ...song, lyricsSections: updatedSections };
+    if (onUpdateSong) {
+      onUpdateSong(updatedSong);
+    }
+  };
+
+  const getYouTubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const handleYoutubeInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!youtubeInput.trim()) return;
+    const extractedId = getYouTubeId(youtubeInput.trim()) || youtubeInput.trim();
+    if (extractedId.length === 11) {
+      setCurrentYoutubeId(extractedId);
+      setError(null);
+    } else {
+      setError("Format YouTube invalide. Collez une URL YouTube ou l'ID de la vidéo directement.");
+    }
+  };
 
   // References for scrolling
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -48,9 +119,21 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
   const speakLine = (text: string) => {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
+      window.speechSynthesis.resume(); // Ensure the audio context isn't frozen/stuck in the browser
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "en-US";
       utterance.rate = 0.95; // Clear natural rate for learning
+      
+      // Select preferred high-quality English voice if available
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoice = voices.find(v => v.lang.startsWith("en-") && (v.name.includes("Google") || v.name.includes("Natural")));
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      } else {
+        const anyEnglishVoice = voices.find(v => v.lang.startsWith("en"));
+        if (anyEnglishVoice) utterance.voice = anyEnglishVoice;
+      }
+
       window.speechSynthesis.speak(utterance);
     }
   };
@@ -201,7 +284,7 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
             </div>
           </div>
 
-          {/* Lecteur Original Voice (YouTube / Local MP3) */}
+          {/* Lecteur Original Voice (YouTube / Phone Sync / Local MP3) */}
           <div className="bg-slate-900 border-b border-slate-800 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black tracking-widest text-red-500 uppercase flex items-center gap-1.5">
@@ -219,43 +302,170 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
             {showOriginalPlayer && (
               <div className="space-y-3">
                 {/* Mode Selector Tabs */}
-                <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
                   <button
                     onClick={() => setPlayerType("youtube")}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`py-1.5 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer ${
                       playerType === "youtube"
                         ? "bg-red-600 text-white shadow-sm"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    📺 YouTube Officiel
+                    📺 YouTube
+                  </button>
+                  <button
+                    onClick={() => setPlayerType("phone")}
+                    className={`py-1.5 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer ${
+                      playerType === "phone"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    📱 Mobile Sync
                   </button>
                   <button
                     onClick={() => setPlayerType("local")}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`py-1.5 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer ${
                       playerType === "local"
                         ? "bg-red-600 text-white shadow-sm"
                         : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    📁 Fichier MP3 Local
+                    📁 MP3 Local
                   </button>
                 </div>
 
                 {/* YouTube Embed Player */}
                 {playerType === "youtube" && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <p className="text-slate-400 text-[11px] leading-relaxed">
-                      L'intégration YouTube ci-dessous recherche automatiquement <strong>{song.artist} - {song.title}</strong> pour vous faire profiter de la version officielle avec la vraie voix !
+                      Profitez du clip officiel de <strong>{song.artist} - {song.title}</strong> directement ici pour écouter la voix originale du chanteur !
                     </p>
-                    <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-inner">
-                      <iframe
-                        src={`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(song.artist + " " + song.title)}&autoplay=0`}
-                        title={`Lecteur Hitlearn - ${song.title}`}
-                        className="absolute inset-0 w-full h-full border-0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
+                    {currentYoutubeId ? (
+                      <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-inner">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${currentYoutubeId}?autoplay=0&enablejsapi=1`}
+                          title={`Lecteur Hitlearn - ${song.title}`}
+                          className="absolute inset-0 w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-slate-950 p-4 border border-slate-800 rounded-xl text-center">
+                        <p className="text-xs text-slate-400">Aucune vidéo YouTube n'est associée à ce morceau. Vous pouvez en lier une ci-dessous !</p>
+                      </div>
+                    )}
+                    
+                    {/* Association form */}
+                    <div className="bg-slate-950/60 p-3 border border-slate-800/60 rounded-xl space-y-2">
+                      <div className="text-[10.5px] font-bold text-slate-300 flex items-center justify-between">
+                        <span>Lier une vidéo YouTube personnalisée</span>
+                        <a
+                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(song.artist + " " + song.title)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-red-400 hover:text-red-300 font-bold underline flex items-center gap-1"
+                        >
+                          <Search className="w-3 h-3" /> Rechercher sur YT ↗
+                        </a>
+                      </div>
+                      <form onSubmit={handleYoutubeInputSubmit} className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Collez l'URL de votre vidéo YouTube ici (ex: https://youtu.be/...)"
+                          value={youtubeInput}
+                          onChange={(e) => setYoutubeInput(e.target.value)}
+                          className="flex-1 bg-slate-950 border border-slate-800 text-[11px] rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-hidden focus:border-red-500"
+                        />
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
+                        >
+                          Associer
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* Phone Sync Player */}
+                {playerType === "phone" && (
+                  <div className="space-y-3">
+                    <p className="text-slate-400 text-[11px] leading-relaxed">
+                      Lancez le morceau sur votre <strong>téléphone</strong> ou <strong>ordinateur</strong> (sur l'application YouTube, Spotify ou Apple Music en arrière-plan) et utilisez nos contrôles ci-dessous pour faire défiler les paroles et commentaires bilingues en direct !
+                    </p>
+                    
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <a
+                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(song.artist + " " + song.title)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Youtube className="w-3.5 h-3.5" /> Ouvrir sur YouTube
+                      </a>
+                      <a
+                        href={`https://open.spotify.com/search/${encodeURIComponent(song.artist + " " + song.title)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Ouvrir sur Spotify
+                      </a>
+                    </div>
+
+                    <div className="bg-slate-950 rounded-xl p-3.5 border border-slate-800/80 space-y-3">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <Smartphone className="w-4 h-4 text-red-500" />
+                          <span>SYNCHRONISATION MOBILE</span>
+                        </span>
+                        <span className="font-mono text-slate-500 text-[10px]">Ligne active : {currentLineIndex + 1}/{totalLines}</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => {
+                            setCurrentLineIndex(prev => Math.max(0, prev - 1));
+                            setIsSongFinished(false);
+                          }}
+                          className="py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold text-center cursor-pointer transition-colors"
+                        >
+                          ⏮️ Précédent
+                        </button>
+                        
+                        <button
+                          onClick={handlePlayPause}
+                          className={`py-2 rounded-lg text-xs font-black text-center cursor-pointer transition-colors ${
+                            isPlaying 
+                              ? "bg-slate-700 hover:bg-slate-600 text-white" 
+                              : "bg-red-600 hover:bg-red-500 text-white"
+                          }`}
+                        >
+                          {isPlaying ? "⏸️ Pause" : "▶️ Défiler"}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setCurrentLineIndex(prev => {
+                              if (prev >= totalLines - 1) {
+                                setIsPlaying(false);
+                                setIsSongFinished(true);
+                                return totalLines - 1;
+                              }
+                              return prev + 1;
+                            });
+                          }}
+                          className="py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold text-center cursor-pointer transition-colors"
+                        >
+                          Suivant ⏭️
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] text-slate-500 text-center">
+                        Astuce : Appuyez directement sur n'importe quel vers ci-dessous pour y caler instantanément le défilement !
+                      </p>
                     </div>
                   </div>
                 )}
@@ -294,8 +504,11 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
                           </button>
                         </div>
                         <audio
+                          ref={localAudioRef}
                           src={localAudioUrl}
                           controls
+                          onPlay={() => setIsPlaying(true)}
+                          onPause={() => setIsPlaying(false)}
                           className="w-full h-8 accent-red-600 rounded"
                         />
                       </div>
@@ -336,9 +549,17 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
                     <span className="text-[10px] font-black tracking-widest text-red-500/80 uppercase">
                       {line.sectionType}
                     </span>
-                    <span className="text-[10px] text-slate-500 font-bold opacity-0 group-hover/line:opacity-100 transition-opacity flex items-center gap-1">
-                      <span>🔊 Écouter</span>
-                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        speakLine(line.english);
+                      }}
+                      className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Écouter la prononciation"
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-red-500" />
+                      <span className="text-[10px] font-bold">Écouter</span>
+                    </button>
                   </div>
                   <div className={`font-sans font-extrabold text-base md:text-lg transition-colors ${
                     isActive ? "text-white" : "text-slate-300"
@@ -349,9 +570,58 @@ export default function LiveMode({ song, onBackToStudy, onStartCourse }: LiveMod
                     <motion.div
                       initial={{ opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-slate-400 text-sm italic font-normal pt-1"
+                      className="text-slate-400 text-sm italic font-normal pt-1 flex flex-wrap items-center gap-2 group/trans"
                     >
-                      {line.french}
+                      {editingLineIndex === idx ? (
+                        <div className="flex items-center gap-2 w-full mt-1.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleUpdateTranslation(idx, editingText);
+                                setEditingLineIndex(null);
+                              } else if (e.key === "Escape") {
+                                setEditingLineIndex(null);
+                              }
+                            }}
+                            className="bg-slate-900 text-white text-xs px-2.5 py-1.5 rounded-lg border border-red-500/50 focus:outline-hidden focus:border-red-500 flex-1 font-sans font-normal"
+                            placeholder="Saisissez la traduction française..."
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => {
+                              handleUpdateTranslation(idx, editingText);
+                              setEditingLineIndex(null);
+                            }}
+                            className="px-2 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[10px] font-bold cursor-pointer"
+                          >
+                            OK
+                          </button>
+                          <button
+                            onClick={() => setEditingLineIndex(null)}
+                            className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-semibold cursor-pointer"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="flex-1">{line.french || "(Double-cliquez pour ajouter une traduction)"}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingLineIndex(idx);
+                              setEditingText(line.french || "");
+                            }}
+                            className="p-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-md text-[10px] font-bold transition-all cursor-pointer inline-flex items-center gap-1"
+                            title="Modifier ou ajouter la traduction"
+                          >
+                            ✏️ Traduire
+                          </button>
+                        </div>
+                      )}
                     </motion.div>
                   )}
                 </div>

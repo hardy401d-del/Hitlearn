@@ -15,10 +15,73 @@ export default function App() {
   const [selectedSong, setSelectedSong] = useState<SongAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Custom generated songs list backed up in local storage
+  const [customSongs, setCustomSongs] = useState<SongAnalysis[]>(() => {
+    try {
+      const saved = localStorage.getItem("hitlearn_custom_songs");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const handleSongSelected = (song: SongAnalysis) => {
+    // If it is not a preset song (Imagine or Someone Like You), persist it in local custom library
+    const isPreset = song.title.toLowerCase() === "imagine" || song.title.toLowerCase() === "someone like you";
+    if (!isPreset) {
+      setCustomSongs((prev) => {
+        const exists = prev.some(
+          (s) => s.title.toLowerCase() === song.title.toLowerCase() && s.artist.toLowerCase() === song.artist.toLowerCase()
+        );
+        if (exists) return prev;
+        const updated = [song, ...prev];
+        try {
+          localStorage.setItem("hitlearn_custom_songs", JSON.stringify(updated));
+        } catch (e) {
+          console.error("Local storage save failed:", e);
+        }
+        return updated;
+      });
+    }
     setSelectedSong(song);
     setCurrentView("study");
+  };
+
+  const handleDeleteCustomSong = (title: string, artist: string) => {
+    setCustomSongs((prev) => {
+      const updated = prev.filter(
+        (s) => !(s.title.toLowerCase() === title.toLowerCase() && s.artist.toLowerCase() === artist.toLowerCase())
+      );
+      try {
+        localStorage.setItem("hitlearn_custom_songs", JSON.stringify(updated));
+      } catch (e) {
+        console.error("Local storage delete failed:", e);
+      }
+      return updated;
+    });
+  };
+
+  const handleUpdateSong = (updatedSong: SongAnalysis) => {
+    setSelectedSong(updatedSong);
+    
+    // Also update in customSongs if it is not a preset song
+    const isPreset = updatedSong.title.toLowerCase() === "imagine" || updatedSong.title.toLowerCase() === "someone like you";
+    if (!isPreset) {
+      setCustomSongs((prev) => {
+        const updated = prev.map((s) => 
+          s.title.toLowerCase() === updatedSong.title.toLowerCase() && s.artist.toLowerCase() === updatedSong.artist.toLowerCase()
+            ? updatedSong
+            : s
+        );
+        try {
+          localStorage.setItem("hitlearn_custom_songs", JSON.stringify(updated));
+        } catch (e) {
+          console.error("Local storage update failed:", e);
+        }
+        return updated;
+      });
+    }
   };
 
   const handleRestart = () => {
@@ -162,6 +225,8 @@ export default function App() {
 
               <SongSelector
                 onSongSelected={handleSongSelected}
+                customSongs={customSongs}
+                onDeleteCustomSong={handleDeleteCustomSong}
                 isLoading={isLoading}
                 setIsLoading={setIsLoading}
                 error={error}
@@ -198,6 +263,7 @@ export default function App() {
                 song={selectedSong}
                 onBackToStudy={() => setCurrentView("study")}
                 onStartCourse={() => setCurrentView("course")}
+                onUpdateSong={handleUpdateSong}
               />
             </motion.div>
           )}

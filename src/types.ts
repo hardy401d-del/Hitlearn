@@ -40,6 +40,8 @@ export interface SongAnalysis {
   explanations: WordExplanation[];
   liveComments: LiveComment[];
   quizQuestions: QuizQuestion[];
+  youtubeId?: string;
+  youtubeUrl?: string;
 }
 
 export interface AssessmentResult {

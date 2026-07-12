@@ -6,6 +6,7 @@ export const PRESET_SONGS: SongAnalysis[] = [
     artist: "John Lennon",
     genre: "Classic Rock / Pop",
     difficulty: "Beginner",
+    youtubeId: "VOgFZfRvYCU",
     summary: "Cette chanson légendaire invite l'auditeur à imaginer un monde en paix, sans frontières, sans religions et sans possessions matérielles, uni dans une fraternité humaine.",
     lyricsSections: [
       {
@@ -185,6 +186,7 @@ export const PRESET_SONGS: SongAnalysis[] = [
     artist: "Adele",
     genre: "Pop / Soul",
     difficulty: "Intermediate",
+    youtubeId: "hLQl3WQQoQ0",
     summary: "Cette puissante ballade relate l'acceptation douloureuse d'une rupture amoureuse. Adele y exprime son chagrin tout en souhaitant le bonheur à son ancien partenaire qui a refait sa vie.",
     lyricsSections: [
       {

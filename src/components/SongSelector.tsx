@@ -1,11 +1,13 @@
 import React, { useState } from "react";
-import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen } from "lucide-react";
+import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen, Trash2, CheckCircle2 } from "lucide-react";
 import { SongAnalysis } from "../types";
 import { PRESET_SONGS } from "../presets";
 import { motion, AnimatePresence } from "motion/react";
 
 interface SongSelectorProps {
   onSongSelected: (song: SongAnalysis) => void;
+  customSongs?: SongAnalysis[];
+  onDeleteCustomSong?: (title: string, artist: string) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
   error: string | null;
@@ -20,12 +22,29 @@ const TIPS = [
   "Les expressions idiomatiques ne se traduisent jamais mot-à-mot. C'est le contexte culturel qui leur donne tout leur sens."
 ];
 
-export default function SongSelector({ onSongSelected, isLoading, setIsLoading, error, setError }: SongSelectorProps) {
+export default function SongSelector({ 
+  onSongSelected, 
+  customSongs = [], 
+  onDeleteCustomSong, 
+  isLoading, 
+  setIsLoading, 
+  error, 
+  setError 
+}: SongSelectorProps) {
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [customLyrics, setCustomLyrics] = useState("");
   const [showCustomLyricsInput, setShowCustomLyricsInput] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
+
+  // Offline creation states
+  const [activeTab, setActiveTab] = useState<"online" | "offline">("online");
+  const [offlineTitle, setOfflineTitle] = useState("");
+  const [offlineArtist, setOfflineArtist] = useState("");
+  const [offlineEnglishLyrics, setOfflineEnglishLyrics] = useState("");
+  const [offlineFrenchLyrics, setOfflineFrenchLyrics] = useState("");
+  const [offlineGenre, setOfflineGenre] = useState("Pop / Rock");
+  const [offlineDifficulty, setOfflineDifficulty] = useState<"Beginner" | "Intermediate" | "Advanced">("Intermediate");
 
   // Rotate tips every 5 seconds during loading
   useState(() => {
@@ -37,6 +56,86 @@ export default function SongSelector({ onSongSelected, isLoading, setIsLoading, 
     }
     return () => clearInterval(interval);
   });
+
+  const handleCreateOfflineSong = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!offlineTitle.trim() || !offlineArtist.trim() || !offlineEnglishLyrics.trim()) {
+      setError("Le titre, l'artiste et les paroles en anglais sont requis pour la création hors-ligne.");
+      return;
+    }
+
+    const engLines = offlineEnglishLyrics.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    const frLines = offlineFrenchLyrics.split("\n").map(l => l.trim());
+
+    const sections: { sectionType: string; lines: { english: string; french: string }[] }[] = [];
+    let currentSection = { sectionType: "Chanson", lines: [] as { english: string; french: string }[] };
+
+    engLines.forEach((engLine, index) => {
+      if (engLine.startsWith("[") && engLine.endsWith("]")) {
+        if (currentSection.lines.length > 0) {
+          sections.push(currentSection);
+        }
+        currentSection = { sectionType: engLine.slice(1, -1), lines: [] };
+      } else {
+        const frLine = frLines[index] || "";
+        currentSection.lines.push({
+          english: engLine,
+          french: frLine
+        });
+      }
+    });
+
+    if (currentSection.lines.length > 0) {
+      sections.push(currentSection);
+    }
+
+    if (sections.length === 0) {
+      setError("Erreur : Impossible de diviser les paroles en vers.");
+      return;
+    }
+
+    const offlineSong: SongAnalysis = {
+      title: offlineTitle.trim(),
+      artist: offlineArtist.trim(),
+      genre: offlineGenre,
+      difficulty: offlineDifficulty,
+      summary: "Ce cours de langue a été créé localement sur votre appareil sans aucune connexion internet requise. Il est parfait pour une écoute autonome !",
+      lyricsSections: sections,
+      explanations: [
+        {
+          term: "Study Mode",
+          meaningFr: "Mode d'étude",
+          explanation: "Ce cours fonctionne entièrement en local sur votre appareil sans connexion requise.",
+          type: "vocabulary",
+          example: "I am studying offline."
+        }
+      ],
+      liveComments: [
+        {
+          lineIndexGlobal: 0,
+          term: "Mode Local",
+          comment: "Bienvenue dans votre cours bilingue local ! Vous pouvez double-cliquer ou modifier directement n'importe quel vers dans le lecteur !",
+          type: "culture"
+        }
+      ],
+      quizQuestions: [
+        {
+          question: "Quelle méthode permet d'améliorer sa prononciation en anglais ?",
+          options: [
+            "Chanter à voix haute les paroles en écoutant la musique",
+            "Mémoriser le dictionnaire par cœur",
+            "Éviter d'écouter de la musique",
+            "Traduire mot-à-mot sans contexte"
+          ],
+          correctAnswer: "Chanter à voix haute les paroles en écoutant la musique",
+          explanation: "Chanter à voix haute aide à travailler l'intonation, la fluidité, le rythme et l'appareil phonatoire !"
+        }
+      ]
+    };
+
+    setError(null);
+    onSongSelected(offlineSong);
+  };
 
   const handlePresetSelect = (song: SongAnalysis) => {
     setError(null);
@@ -190,90 +289,304 @@ export default function SongSelector({ onSongSelected, isLoading, setIsLoading, 
               </div>
             </div>
 
+            {/* Custom Songs Library */}
+            {customSongs && customSongs.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Music className="w-5 h-5 text-red-500 animate-pulse" />
+                    <span>Vos leçons générées ({customSongs.length})</span>
+                  </h2>
+                  <span className="text-xs text-slate-400">Prêt à l'étude</span>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  {customSongs.map((song) => (
+                    <div
+                      key={`${song.title}-${song.artist}`}
+                      className="flex items-center justify-between p-5 bg-white border border-slate-200 hover:border-red-400 hover:shadow-md rounded-2xl text-left transition-all duration-200 group relative cursor-pointer"
+                      onClick={() => handlePresetSelect(song)}
+                    >
+                      <div className="space-y-1 flex-1 pr-4">
+                        <div className="font-bold text-slate-900 group-hover:text-red-600 transition-colors">
+                          {song.title}
+                        </div>
+                        <div className="text-slate-500 text-xs font-medium">{song.artist}</div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded font-medium uppercase tracking-wider">
+                            {song.genre}
+                          </span>
+                          <span className={`px-2 py-0.5 text-[10px] rounded font-medium uppercase tracking-wider ${
+                            song.difficulty === "Beginner" 
+                              ? "bg-emerald-50 text-emerald-700" 
+                              : song.difficulty === "Intermediate"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-red-50 text-red-700"
+                          }`}>
+                            {song.difficulty}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        {onDeleteCustomSong && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteCustomSong(song.title, song.artist);
+                            }}
+                            className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-full transition-colors cursor-pointer"
+                            title="Supprimer ce cours"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handlePresetSelect(song)}
+                          className="w-10 h-10 bg-slate-50 group-hover:bg-red-50 rounded-full flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-red-500 transition-colors" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Search and Analyze Form */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xs space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <Search className="w-5 h-5 text-red-500" />
-                  <span>Analyser votre chanson préférée</span>
-                </h2>
-                <p className="text-slate-400 text-xs mt-1">
-                  Gemini recherchera les paroles et construira votre leçon d'anglais sur-mesure !
-                </p>
+              
+              {/* Tab Selector */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("online");
+                    setError(null);
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === "online"
+                      ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-red-500" />
+                  <span>🚀 Assistant IA (En ligne)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("offline");
+                    setError(null);
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === "offline"
+                      ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-slate-600" />
+                  <span>🔌 Mode Hors-ligne (100% Local)</span>
+                </button>
               </div>
 
-              <form onSubmit={handleSearchAndAnalyze} className="space-y-5">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-600">Titre de la Chanson <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ex: Shape of You, Shallow, Hello..."
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
-                    />
+              {activeTab === "online" ? (
+                <>
+                  <div className="border-b border-slate-100 pb-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <Search className="w-5 h-5 text-red-500" />
+                      <span>Analyser votre chanson préférée</span>
+                    </h2>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Gemini recherchera les paroles et construira votre leçon d'anglais sur-mesure !
+                    </p>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-600">Artiste / Groupe <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ex: Ed Sheeran, Lady Gaga, Adele..."
-                      value={artist}
-                      onChange={(e) => setArtist(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
-                    />
+
+                  <form onSubmit={handleSearchAndAnalyze} className="space-y-5">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Titre de la Chanson <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Shape of You, Shallow, Hello..."
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Artiste / Groupe <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Ed Sheeran, Lady Gaga, Adele..."
+                          value={artist}
+                          onChange={(e) => setArtist(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Manual lyrics input toggle */}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomLyricsInput(!showCustomLyricsInput)}
+                        className="text-xs text-red-600 hover:text-red-700 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{showCustomLyricsInput ? "Masquer la saisie manuelle des paroles" : "Ajouter mes propres paroles (Optionnel)"}</span>
+                      </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {showCustomLyricsInput && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden space-y-1.5"
+                        >
+                          <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                            <span>Coller les paroles anglaises</span>
+                            <span className="text-slate-400 font-normal">(Recommandé pour les musiques rares ou spécifiques)</span>
+                          </label>
+                          <textarea
+                            rows={6}
+                            placeholder="Paste English lyrics here..."
+                            value={customLyrics}
+                            onChange={(e) => setCustomLyrics(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm font-mono transition-colors resize-none"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                      <button
+                        type="submit"
+                        id="submit-analysis-btn"
+                        className="px-6 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Générer mon cours d'anglais</span>
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div className="border-b border-slate-100 pb-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-slate-700" />
+                      <span>Création de cours Instantané (Hors-ligne)</span>
+                    </h2>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Idéal si vous êtes déconnecté ! Entrez vos paroles et étudiez vos morceaux préférés avec synchronisation locale.
+                    </p>
                   </div>
-                </div>
 
-                {/* Manual lyrics input toggle */}
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomLyricsInput(!showCustomLyricsInput)}
-                    className="text-xs text-red-600 hover:text-red-700 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>{showCustomLyricsInput ? "Masquer la saisie manuelle des paroles" : "Ajouter mes propres paroles (Optionnel)"}</span>
-                  </button>
-                </div>
+                  <form onSubmit={handleCreateOfflineSong} className="space-y-5">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Titre de la Chanson <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Shape of You, Shallow, Hello..."
+                          value={offlineTitle}
+                          onChange={(e) => setOfflineTitle(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Artiste / Groupe <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Ed Sheeran, Lady Gaga, Adele..."
+                          value={offlineArtist}
+                          onChange={(e) => setOfflineArtist(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                    </div>
 
-                <AnimatePresence>
-                  {showCustomLyricsInput && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden space-y-1.5"
-                    >
-                      <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">
-                        <span>Coller les paroles anglaises</span>
-                        <span className="text-slate-400 font-normal">(Recommandé pour les musiques rares ou spécifiques)</span>
-                      </label>
-                      <textarea
-                        rows={6}
-                        placeholder="Paste English lyrics here..."
-                        value={customLyrics}
-                        onChange={(e) => setCustomLyrics(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm font-mono transition-colors resize-none"
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Genre Musical</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Pop, Rock, Rap, Jazz..."
+                          value={offlineGenre}
+                          onChange={(e) => setOfflineGenre(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600">Difficulté de la Chanson</label>
+                        <select
+                          value={offlineDifficulty}
+                          onChange={(e) => setOfflineDifficulty(e.target.value as any)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                        >
+                          <option value="Beginner">Débutant (Vocabulaire simple, débit lent)</option>
+                          <option value="Intermediate">Intermédiaire (Rythme standard)</option>
+                          <option value="Advanced">Avancé (Argot complexe, débit rapide)</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
-                  <button
-                    type="submit"
-                    id="submit-analysis-btn"
-                    className="px-6 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Générer mon cours d'anglais</span>
-                  </button>
-                </div>
-              </form>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600 flex justify-between">
+                          <span>Paroles Originales (Anglais) <span className="text-red-500">*</span></span>
+                          <span className="text-slate-400 font-normal">Une ligne par vers</span>
+                        </label>
+                        <textarea
+                          rows={8}
+                          required
+                          placeholder="Ex:&#10;Yesterday all my troubles seemed so far away&#10;Now it looks as though they're here to stay"
+                          value={offlineEnglishLyrics}
+                          onChange={(e) => setOfflineEnglishLyrics(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-xs font-mono transition-colors resize-none leading-relaxed"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-600 flex justify-between">
+                          <span>Traduction en Français (Optionnel)</span>
+                          <span className="text-slate-400 font-normal">Une ligne par vers</span>
+                        </label>
+                        <textarea
+                          rows={8}
+                          placeholder="Ex:&#10;Hier tous mes soucis semblaient si loin&#10;Aujourd'hui il semble qu'ils soient partis pour rester"
+                          value={offlineFrenchLyrics}
+                          onChange={(e) => setOfflineFrenchLyrics(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-xs font-mono transition-colors resize-none leading-relaxed"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 border border-slate-200 rounded-2xl text-xs text-slate-500 space-y-1 leading-relaxed">
+                      <p className="font-bold text-slate-700">💡 Astuce d'importation :</p>
+                      <p>Pour un alignement optimal, essayez d'entrer le même nombre de lignes en Anglais et en Français. S'il vous manque des traductions, vous pourrez facilement les ajouter ou les corriger en direct en double-cliquant sur les vers dans l'application !</p>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                      <button
+                        type="submit"
+                        className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>Créer le cours local instantanément</span>
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </div>
           </motion.div>
         )}
