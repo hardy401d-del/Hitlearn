@@ -1,0 +1,6 @@
+{
+  "name": "Hitlearn",
+  "description": "Apprenez l'anglais en musique avec Hitlearn par IntouchProd. Une application interactive bilingue avec dictionnaire intelligent, écoute active, commentaires de prof en direct par IA, quiz ludiques et certificats de réussite.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
