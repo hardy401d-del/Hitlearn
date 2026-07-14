@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen, Trash2, CheckCircle2, Upload, FileAudio } from "lucide-react";
+import { Music, Search, FileText, ChevronRight, HelpCircle, Loader2, Sparkles, BookOpen, Trash2, CheckCircle2, Upload, FileAudio, Youtube } from "lucide-react";
 import { SongAnalysis } from "../types";
 import { PRESET_SONGS } from "../presets";
 import { motion, AnimatePresence } from "motion/react";
@@ -42,7 +42,8 @@ export default function SongSelector({
   const [tipIndex, setTipIndex] = useState(0);
 
   // Audio transcription tab states
-  const [activeTab, setActiveTab] = useState<"online" | "audio" | "offline">("online");
+  const [activeTab, setActiveTab] = useState<"online" | "youtube" | "audio" | "offline">("online");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioTitle, setAudioTitle] = useState("");
   const [audioArtist, setAudioArtist] = useState("");
@@ -164,9 +165,13 @@ export default function SongSelector({
     setTipIndex(0);
 
     try {
+      const savedKey = localStorage.getItem("hitlearn_gemini_api_key") || "";
       const response = await fetch("/api/analyze-song", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(savedKey ? { "x-gemini-key": savedKey } : {})
+        },
         body: JSON.stringify({
           title: title.trim(),
           artist: artist.trim(),
@@ -183,6 +188,41 @@ export default function SongSelector({
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Une erreur de connexion au serveur s'est produite.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleYoutubeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!youtubeUrl.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
+    setTipIndex(0);
+
+    try {
+      const savedKey = localStorage.getItem("hitlearn_gemini_api_key") || "";
+      const response = await fetch("/api/analyze-youtube", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(savedKey ? { "x-gemini-key": savedKey } : {})
+        },
+        body: JSON.stringify({
+          youtubeUrl: youtubeUrl.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de l'analyse du lien YouTube.");
+      }
+
+      onSongSelected(data);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Impossible de transcrire et d'analyser la vidéo YouTube.");
     } finally {
       setIsLoading(false);
     }
@@ -250,9 +290,13 @@ export default function SongSelector({
       }
 
       // 3. Request API
+      const savedKey = localStorage.getItem("hitlearn_gemini_api_key") || "";
       const response = await fetch("/api/transcribe-audio", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(savedKey ? { "x-gemini-key": savedKey } : {})
+        },
         body: JSON.stringify({
           audio: base64Data,
           mimeType: audioFile.type || "audio/mp3",
@@ -455,7 +499,7 @@ export default function SongSelector({
             <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xs space-y-6">
               
               {/* Tab Selector */}
-              <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
                 <button
                   type="button"
                   onClick={() => {
@@ -474,6 +518,21 @@ export default function SongSelector({
                 <button
                   type="button"
                   onClick={() => {
+                    setActiveTab("youtube");
+                    setError(null);
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeTab === "youtube"
+                      ? "bg-white text-slate-900 shadow-xs border border-slate-200/50"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <Youtube className="w-4 h-4 text-red-500" />
+                  <span>📺 Lien YouTube</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setActiveTab("audio");
                     setError(null);
                   }}
@@ -484,7 +543,7 @@ export default function SongSelector({
                   }`}
                 >
                   <FileAudio className="w-4 h-4 text-amber-500" />
-                  <span>🎙️ Transcription MP3</span>
+                  <span>🎙️ Audio MP3</span>
                 </button>
                 <button
                   type="button"
@@ -503,7 +562,43 @@ export default function SongSelector({
                 </button>
               </div>
 
-              {activeTab === "online" ? (
+              {activeTab === "youtube" ? (
+                <>
+                  <div className="border-b border-slate-100 pb-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <Youtube className="w-5 h-5 text-red-500" />
+                      <span>Générer un cours depuis une vidéo YouTube</span>
+                    </h2>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Collez n'importe quel lien de musique YouTube. Notre IA analysera l'audio, transcrira les paroles et créera votre cours interactif bilingue instantanément !
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleYoutubeSubmit} className="space-y-5">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-600">Lien ou URL de la vidéo YouTube <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-red-500 focus:bg-white focus:outline-none rounded-xl text-slate-800 text-sm transition-colors"
+                      />
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                      <button
+                        type="submit"
+                        className="px-6 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Créer le cours par IA</span>
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : activeTab === "online" ? (
                 <>
                   <div className="border-b border-slate-100 pb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">

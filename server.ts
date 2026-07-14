@@ -11,31 +11,38 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Initialize Gemini SDK with telemetry header as required
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({
-  apiKey: apiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
+// Helper to get Gemini client dynamically (using user-supplied key or environment variable)
+const getAiClient = (userKey?: string) => {
+  const finalKey = userKey || process.env.GEMINI_API_KEY;
+  if (!finalKey) {
+    throw new Error("Clé API Gemini non configurée. Veuillez ajouter votre clé en haut de l'application ou configurer la variable d'environnement GEMINI_API_KEY.");
   }
-});
+  return new GoogleGenAI({
+    apiKey: finalKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+};
 
 // Endpoint 1: Analyze song and generate lyrics, translations, live comments, and quiz
 app.post("/api/analyze-song", async (req: Request, res: Response): Promise<void> => {
   try {
     const { title, artist, lyrics } = req.body;
+    const userKey = req.headers["x-gemini-key"] as string | undefined;
 
     if (!title || !artist) {
       res.status(400).json({ error: "Title and Artist are required." });
       return;
     }
 
-    if (!apiKey) {
-      res.status(500).json({ 
-        error: "GEMINI_API_KEY environment variable is not configured. Please add it in the Secrets panel." 
-      });
+    let aiClient;
+    try {
+      aiClient = getAiClient(userKey);
+    } catch (err: any) {
+      res.status(401).json({ error: err.message });
       return;
     }
 
@@ -67,7 +74,7 @@ Please:
     }
 
     // Generate content using gemini-3.5-flash with a structured JSON schema
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -188,16 +195,18 @@ Please:
 app.post("/api/assess-understanding", async (req: Request, res: Response): Promise<void> => {
   try {
     const { title, artist, userUnderstanding } = req.body;
+    const userKey = req.headers["x-gemini-key"] as string | undefined;
 
     if (!title || !artist || !userUnderstanding) {
       res.status(400).json({ error: "Missing required fields." });
       return;
     }
 
-    if (!apiKey) {
-      res.status(500).json({ 
-        error: "GEMINI_API_KEY environment variable is not configured. Please add it in the Secrets panel." 
-      });
+    let aiClient;
+    try {
+      aiClient = getAiClient(userKey);
+    } catch (err: any) {
+      res.status(401).json({ error: err.message });
       return;
     }
 
@@ -217,7 +226,7 @@ Please analyze their understanding:
 
 Keep the response structured and easy to read. Output valid JSON in the requested schema.`;
 
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -261,16 +270,18 @@ Keep the response structured and easy to read. Output valid JSON in the requeste
 app.post("/api/pronunciation-feedback", async (req: Request, res: Response): Promise<void> => {
   try {
     const { term, userTranscription } = req.body;
+    const userKey = req.headers["x-gemini-key"] as string | undefined;
 
     if (!term) {
       res.status(400).json({ error: "The 'term' field is required." });
       return;
     }
 
-    if (!apiKey) {
-      res.status(500).json({ 
-        error: "GEMINI_API_KEY environment variable is not configured. Please add it in the Secrets panel." 
-      });
+    let aiClient;
+    try {
+      aiClient = getAiClient(userKey);
+    } catch (err: any) {
+      res.status(401).json({ error: err.message });
       return;
     }
 
@@ -295,7 +306,7 @@ Please analyze their pronunciation attempt:
 4. Set the default "accuracyPercentage" to 100.`;
     }
 
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -332,16 +343,18 @@ Please analyze their pronunciation attempt:
 app.post("/api/transcribe-audio", async (req: Request, res: Response): Promise<void> => {
   try {
     const { audio, mimeType, title, artist } = req.body;
+    const userKey = req.headers["x-gemini-key"] as string | undefined;
 
     if (!audio || !mimeType) {
       res.status(400).json({ error: "L'audio (base64) et le mimeType sont requis." });
       return;
     }
 
-    if (!apiKey) {
-      res.status(500).json({ 
-        error: "GEMINI_API_KEY environment variable is not configured. Please add it in the Secrets panel." 
-      });
+    let aiClient;
+    try {
+      aiClient = getAiClient(userKey);
+    } catch (err: any) {
+      res.status(401).json({ error: err.message });
       return;
     }
 
@@ -366,7 +379,7 @@ An audio file of a song has been uploaded. Please listen to this song very caref
 7. Create a 5-question multiple-choice interactive quiz about the song's language, vocabulary, and meaning to help French speakers learn English. Ensure options include correct and incorrect answers with helpful explanations in French.`;
 
     // Call Gemini 3.5 Flash
-    const response = await ai.models.generateContent({
+    const response = await aiClient.models.generateContent({
       model: "gemini-3.5-flash",
       contents: [
         audioPart,
@@ -483,6 +496,165 @@ An audio file of a song has been uploaded. Please listen to this song very caref
   } catch (error: any) {
     console.error("Error transcribing and analyzing audio:", error);
     res.status(500).json({ error: error.message || "An error occurred while transcribing and analyzing the audio." });
+  }
+});
+
+// Endpoint 5: Analyze YouTube video to extract and translate lyrics
+app.post("/api/analyze-youtube", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { youtubeUrl } = req.body;
+    const userKey = req.headers["x-gemini-key"] as string | undefined;
+
+    if (!youtubeUrl) {
+      res.status(400).json({ error: "L'URL ou l'identifiant YouTube est requis." });
+      return;
+    }
+
+    let aiClient;
+    try {
+      aiClient = getAiClient(userKey);
+    } catch (err: any) {
+      res.status(401).json({ error: err.message });
+      return;
+    }
+
+    const prompt = `You are an expert bilingual English-French music and language professor.
+The student has provided this YouTube video URL: "${youtubeUrl}".
+Please:
+1. Identify the song's official Title, Artist, and full English lyrics based on this video URL/ID.
+2. If you are not completely sure, use the URL to search or infer the song, retrieve/estimate the English lyrics, and make sure the Title and Artist are correct.
+3. Divide the lyrics into logical sections (e.g., Verse 1, Chorus, Verse 2, Bridge, etc.).
+4. Translate the lyrics line-by-line into natural, beautiful French. Ensure the line counts match perfectly so they can be shown side-by-side.
+5. Identify 5-8 key vocabulary words, slang, or idioms in the song, translate them, and provide clean explanations in French, including practical alternative examples.
+6. Generate 5-6 real-time teacher comments that explain language structures, cultural meanings, or tricky phrases. Map these precisely to a flat global index of the lines (first line is index 0, second line is index 1, etc.) for simulated live playback mode.
+7. Create a 5-question multiple-choice interactive quiz about the song's language, vocabulary, and meaning to help French speakers learn English. Ensure options include correct and incorrect answers with helpful explanations in French.`;
+
+    const response = await aiClient.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "You are a bilingual English-French music and language professor. Your job is to make learning English through songs incredibly fun, clear, and comprehensive. Always output valid JSON conforming exactly to the responseSchema.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          required: ["title", "artist", "genre", "difficulty", "summary", "lyricsSections", "explanations", "liveComments", "quizQuestions"],
+          properties: {
+            title: { type: Type.STRING },
+            artist: { type: Type.STRING },
+            genre: { type: Type.STRING },
+            difficulty: { 
+              type: Type.STRING, 
+              description: "English level of the song: 'Beginner', 'Intermediate', or 'Advanced'" 
+            },
+            summary: { 
+              type: Type.STRING, 
+              description: "A 2-3 sentence overview of what the song is about and its main message, in French." 
+            },
+            lyricsSections: {
+              type: Type.ARRAY,
+              description: "Lyrics divided into logical parts like Verses and Chorus.",
+              items: {
+                type: Type.OBJECT,
+                required: ["sectionType", "lines"],
+                properties: {
+                  sectionType: { 
+                    type: Type.STRING, 
+                    description: "e.g., 'Verse 1', 'Chorus', 'Bridge', 'Outro'" 
+                  },
+                  lines: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      required: ["english", "french"],
+                      properties: {
+                        english: { type: Type.STRING, description: "The original line in English" },
+                        french: { type: Type.STRING, description: "The French translation of this exact line" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            explanations: {
+              type: Type.ARRAY,
+              description: "Detailed breakdowns of tricky vocabulary, slang, idioms, or grammar from the song.",
+              items: {
+                type: Type.OBJECT,
+                required: ["term", "meaningFr", "explanation", "type", "example"],
+                properties: {
+                  term: { type: Type.STRING, description: "The English word, idiom, or slang phrase" },
+                  meaningFr: { type: Type.STRING, description: "Brief translation of the term in French" },
+                  explanation: { type: Type.STRING, description: "Linguistic or cultural context and usage explanation in French" },
+                  type: { 
+                    type: Type.STRING, 
+                    description: "Classification: 'vocabulary', 'slang', 'idiom', 'phrasal_verb', or 'grammar'" 
+                  },
+                  example: { type: Type.STRING, description: "Another example sentence in English using this exact term" }
+                }
+              }
+            },
+            liveComments: {
+              type: Type.ARRAY,
+              description: "Pop-up teacher notes that appear in real-time as the song plays.",
+              items: {
+                type: Type.OBJECT,
+                required: ["lineIndexGlobal", "term", "comment", "type"],
+                properties: {
+                  lineIndexGlobal: { 
+                    type: Type.INTEGER, 
+                    description: "The 0-based index of the line in the flat, ordered array of ALL lyric lines where this comment is relevant" 
+                  },
+                  term: { type: Type.STRING, description: "The vocabulary, idiom, or pronunciation note being commented on" },
+                  comment: { type: Type.STRING, description: "The teacher's note/comment, in French" },
+                  type: { type: Type.STRING, description: "Category: 'culture', 'grammar', 'pronunciation', or 'vocabulary'" }
+                }
+              }
+            },
+            quizQuestions: {
+              type: Type.ARRAY,
+              description: "A multi-question language learning quiz tailored to the vocabulary in the song.",
+              items: {
+                type: Type.OBJECT,
+                required: ["question", "options", "correctAnswer", "explanation"],
+                properties: {
+                  question: { type: Type.STRING, description: "The quiz question, in French or simple English" },
+                  options: { 
+                    type: Type.ARRAY, 
+                    items: { type: Type.STRING },
+                    description: "Exactly 4 options"
+                  },
+                  correctAnswer: { type: Type.STRING, description: "The exact correct option string from the options list" },
+                  explanation: { type: Type.STRING, description: "Detailed explanation of why this answer is correct, in French" }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("Empty response received from Gemini.");
+    }
+
+    const result = JSON.parse(text);
+    
+    // Extract YouTube ID to attach it to the result so it automatically loads
+    const getYouTubeId = (url: string) => {
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    };
+    const extractedId = getYouTubeId(youtubeUrl) || youtubeUrl;
+    if (extractedId && extractedId.length === 11) {
+      result.youtubeId = extractedId;
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("Error analyzing YouTube video:", error);
+    res.status(500).json({ error: error.message || "An error occurred while analyzing the YouTube video." });
   }
 });
 

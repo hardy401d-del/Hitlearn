@@ -6,6 +6,7 @@ import SongSelector from "./components/SongSelector";
 import StudyDashboard from "./components/StudyDashboard";
 import LiveMode from "./components/LiveMode";
 import QuizCourse from "./components/QuizCourse";
+import GeminiKeyConfig from "./components/GeminiKeyConfig";
 import { motion, AnimatePresence } from "motion/react";
 
 type ViewType = "landing" | "selector" | "study" | "live" | "course";
@@ -94,6 +95,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans select-none selection:bg-red-200">
       
+      {currentView !== "landing" && <GeminiKeyConfig />}
+
       {/* Visual Navigation Header - Hide in Landing page for cleaner immersive design */}
       {currentView !== "landing" && (
         <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 shadow-xs">

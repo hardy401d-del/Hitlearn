@@ -94,6 +94,8 @@ export default function LiveMode({
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
+  const [isAnalyzingYoutube, setIsAnalyzingYoutube] = useState(false);
+
   const handleYoutubeInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!youtubeInput.trim()) return;
@@ -103,6 +105,49 @@ export default function LiveMode({
       setError(null);
     } else {
       setError("Format YouTube invalide. Collez une URL YouTube ou l'ID de la vidéo directement.");
+    }
+  };
+
+  const handleAnalyzeYoutube = async () => {
+    if (!youtubeInput.trim()) return;
+    setIsAnalyzingYoutube(true);
+    setError(null);
+    setIsPlaying(false);
+
+    try {
+      const savedKey = localStorage.getItem("hitlearn_gemini_api_key") || "";
+      const response = await fetch("/api/analyze-youtube", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(savedKey ? { "x-gemini-key": savedKey } : {})
+        },
+        body: JSON.stringify({
+          youtubeUrl: youtubeInput.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de l'analyse de la vidéo YouTube.");
+      }
+
+      if (onUpdateSong) {
+        onUpdateSong(data);
+      }
+      
+      setCurrentLineIndex(0);
+      setIsSongFinished(false);
+      setAssessmentResult(null);
+      setUserUnderstanding("");
+      if (data.youtubeId) {
+        setCurrentYoutubeId(data.youtubeId);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Une erreur est survenue lors de l'analyse de la vidéo.");
+    } finally {
+      setIsAnalyzingYoutube(false);
     }
   };
 
@@ -355,6 +400,13 @@ export default function LiveMode({
                     <p className="text-slate-400 text-[11px] leading-relaxed">
                       Profitez du clip officiel de <strong>{song.artist} - {song.title}</strong> directement ici pour écouter la voix originale du chanteur !
                     </p>
+
+                    {error && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold rounded-xl leading-relaxed">
+                        ⚠️ {error}
+                      </div>
+                    )}
+
                     {currentYoutubeId ? (
                       <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-inner">
                         <iframe
@@ -372,9 +424,12 @@ export default function LiveMode({
                     )}
                     
                     {/* Association form */}
-                    <div className="bg-slate-950/60 p-3 border border-slate-800/60 rounded-xl space-y-2">
+                    <div className="bg-slate-950/60 p-3.5 border border-slate-800/60 rounded-xl space-y-3">
                       <div className="text-[10.5px] font-bold text-slate-300 flex items-center justify-between">
-                        <span>Lier une vidéo YouTube personnalisée</span>
+                        <span className="flex items-center gap-1.5">
+                          <Youtube className="w-3.5 h-3.5 text-red-500" />
+                          <span>Vidéo YouTube & Adaptation</span>
+                        </span>
                         <a
                           href={`https://www.youtube.com/results?search_query=${encodeURIComponent(song.artist + " " + song.title)}`}
                           target="_blank"
@@ -384,21 +439,42 @@ export default function LiveMode({
                           <Search className="w-3 h-3" /> Rechercher sur YT ↗
                         </a>
                       </div>
-                      <form onSubmit={handleYoutubeInputSubmit} className="flex gap-2">
+                      <div className="space-y-2">
                         <input
                           type="text"
                           placeholder="Collez l'URL de votre vidéo YouTube ici (ex: https://youtu.be/...)"
                           value={youtubeInput}
                           onChange={(e) => setYoutubeInput(e.target.value)}
-                          className="flex-1 bg-slate-950 border border-slate-800 text-[11px] rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-hidden focus:border-red-500"
+                          className="w-full bg-slate-950 border border-slate-800 text-[11px] rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-hidden focus:border-red-500"
                         />
-                        <button
-                          type="submit"
-                          className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          Associer
-                        </button>
-                      </form>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleYoutubeInputSubmit}
+                            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[10.5px] font-bold transition-all cursor-pointer whitespace-nowrap text-center"
+                          >
+                            Lier uniquement
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAnalyzeYoutube()}
+                            disabled={isAnalyzingYoutube}
+                            className="px-3 py-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-800 text-white rounded-xl text-[10.5px] font-black transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 shadow-md shadow-red-900/10"
+                          >
+                            {isAnalyzingYoutube ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Adaptation...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3.5 h-3.5 text-red-200" />
+                                <span>Adapter le cours (IA)</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

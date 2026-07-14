@@ -134,9 +134,13 @@ export default function PronunciationPractice({ term }: PronunciationPracticePro
     setError(null);
 
     try {
+      const savedKey = localStorage.getItem("hitlearn_gemini_api_key") || "";
       const response = await fetch("/api/pronunciation-feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(savedKey ? { "x-gemini-key": savedKey } : {})
+        },
         body: JSON.stringify({
           term,
           userTranscription: transcription.trim() || undefined,
